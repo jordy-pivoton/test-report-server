@@ -1,0 +1,22 @@
+services:
+  app:
+    build: .
+    container_name: test-report-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "3443:3443"
+    environment:
+      REPORTS_ROOT: /app/reports
+      PORT: "3000"
+      USE_HTTPS: "${USE_HTTPS:-}"
+      HTTPS_PORT: "3443"
+      BASE_URL: "${BASE_URL:-}"
+      SSL_CERT_PATH: /app/cert/cert.pem
+      SSL_KEY_PATH: /app/cert/key.pem
+    volumes:
+      - ${REPORTS_HOST_PATH:-./reports}:/app/reports:ro
+      - cert:/app/cert
+
+volumes:
+  cert:

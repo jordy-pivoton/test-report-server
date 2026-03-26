@@ -1,0 +1,14 @@
+node_modules
+dist
+reports
+.git
+.gitignore
+.env
+.env.*
+*.md
+cert
+.cursor
+.vscode
+.idea
+*.log
+.DS_Store
