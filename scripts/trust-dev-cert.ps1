@@ -1,11 +1,11 @@
 # Adds cert/cert.pem to the current user's Trusted Root store so Chrome/Edge trust
-# this dev server on https://localhost (self-signed). Dev-only — do not use untrusted PEMs.
+# this dev server on https://localhost (self-signed). Dev-only - do not use untrusted PEMs.
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $certPath = Join-Path $repoRoot "cert\cert.pem"
 
 if (-not (Test-Path -LiteralPath $certPath)) {
-  Write-Host "Missing $certPath — run: npm run certs" -ForegroundColor Red
+  Write-Host "Missing $certPath - run: npm run certs" -ForegroundColor Red
   exit 1
 }
 
