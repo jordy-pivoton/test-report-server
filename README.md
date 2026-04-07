@@ -2,6 +2,34 @@
 
 Server voor Allure-rapporten en Playwright trace-bestanden.
 
+## Eerste keer (lokaal)
+
+1. **`npm install`**
+2. **Certificaat en sleutel in `cert/`**  
+   - Ontbreken `cert/cert.pem` en `cert/key.pem`? Voer `npm run certs` uit (zelfondertekend, zelfde inhoud als wanneer de server ze bij eerste HTTPS-start genereert).  
+   - **Alternatief (aanbevolen):** installeer [mkcert](https://github.com/FiloSottile/mkcert), voer eenmalig `mkcert -install` uit, daarna op **Windows** `npm run certs:mkcert` (schrijft `localhost`, `127.0.0.1` en `::1`). Op **macOS/Linux** kun je hetzelfde bereiken met:  
+     `mkcert -key-file cert/key.pem -cert-file cert/cert.pem localhost 127.0.0.1 ::1`
+3. **Browser / OS vertrouwen (per ontwikkelaar, per computer)**  
+   Zelfondertekende certificaten uit stap 2 worden **niet** automatisch vertrouwd als je de repo clone’t. Iedereen moet dat **lokaal eenmalig** regelen.  
+   - **Windows:** `npm run trust-cert` (zet `cert/cert.pem` in *Huidige gebruiker → Vertrouwde basiscertificeringsinstanties*). Sluit daarna tabs naar `https://localhost:3443` en open het adres opnieuw (of herstart de browser).  
+   - **Met mkcert:** na `mkcert -install` is extra vertrouwen meestal niet nodig.  
+   - **macOS / Linux zonder mkcert:** certificaat handmatig als vertrouwd markeren of overstappen op mkcert (zie [Certificaten](#certificaten)).
+4. **Server met HTTPS starten** (nodig voor een werkende trace viewer):
+
+   ```bash
+   # Bash / Linux / macOS
+   USE_HTTPS=1 npm run dev
+   ```
+
+   ```powershell
+   # PowerShell (Windows)
+   $env:USE_HTTPS="1"; npm run dev
+   ```
+
+5. Open **https://localhost:3443** (of de poort uit `HTTPS_PORT`).
+
+**Let op:** certificaatbestanden kun je in git delen, maar **vertrouwen** staat niet in git: elke collega moet stap 3 op eigen machine uitvoeren (of mkcert gebruiken). Een gedeelde `key.pem` in een repo is gevoelig; overweeg PEM’s buiten git te houden en per developer `npm run certs` + `trust-cert` te laten draaien.
+
 ## Playwright Trace Viewer (zelf gehost)
 
 De server host de **Playwright Trace Viewer** zelf (uit `playwright-core`). Trace-links openen de viewer op je eigen server; de trace wordt via een same-origin URL geladen. Daardoor zijn **geen CORS** en **geen externe trace.playwright.dev** meer nodig. Voor een werkende viewer moet het HTTPS-certificaat door de browser vertrouwd worden (zie Certificaten); een lokaal vertrouwd certificaat via **mkcert** wordt aanbevolen.
@@ -39,16 +67,18 @@ De trace viewer laadt scripts en een Service Worker. Bij een **onvertrouwd** cer
 [mkcert](https://github.com/FiloSottile/mkcert) maakt een certificaat dat je browser wél vertrouwt. Geen waarschuwingen en geen geblokkeerde scripts of Service Worker.
 
 1. **mkcert installeren**
-   - Windows (PowerShell als admin): `winget install mkcert` of [Chocolatey](https://chocolatey.org/): `choco install mkcert`
+   - Windows: `winget install -e --id FiloSottile.mkcert` of [Chocolatey](https://chocolatey.org/): `choco install mkcert`
    - Of download: https://github.com/FiloSottile/mkcert#installation
 2. **Lokale CA eenmalig installeren** (nodig voor vertrouwen in de browser):
    ```powershell
    mkcert -install
    ```
 3. **Certificaat voor localhost aanmaken** (in de projectmap, map `cert` wordt aangemaakt):
-   ```powershell
-   mkcert -key-file cert/key.pem -cert-file cert/cert.pem localhost
-   ```
+   - **Windows:** in de projectmap: `npm run certs:mkcert` (schrijft `cert/cert.pem` en `cert/key.pem` met SAN’s voor `localhost`, `127.0.0.1`, `::1`).
+   - **Handmatig (alle platformen):**
+     ```bash
+     mkcert -key-file cert/key.pem -cert-file cert/cert.pem localhost 127.0.0.1 ::1
+     ```
 4. **Server starten met HTTPS**; de server gebruikt dan automatisch `./cert/cert.pem` en `./cert/key.pem`:
    ```powershell
    $env:USE_HTTPS="1"; npm run dev
@@ -57,13 +87,16 @@ De trace viewer laadt scripts en een Service Worker. Bij een **onvertrouwd** cer
 
 ### Zelf-ondertekend (standaard bij `USE_HTTPS=1`)
 
-Als er geen bestaande certificaten op `SSL_CERT_PATH` / `SSL_KEY_PATH` staan, wordt bij de eerste start een **self-signed** certificaat gegenereerd in `./cert/`. De browser vertrouwt dit vaak niet voor scripts en Service Worker, waardoor de trace viewer een lege pagina kan tonen. Voor een werkende viewer is mkcert (hierboven) aanbevolen.
+Als er geen bestaande certificaten op `SSL_CERT_PATH` / `SSL_KEY_PATH` staan, wordt bij de eerste start een **self-signed** certificaat gegenereerd in `./cert/`. De browser vertrouwt dit standaard niet (`NET::ERR_CERT_AUTHORITY_INVALID`); scripts en Service Worker kunnen daardoor falen. **Windows:** voer eenmalig `npm run trust-cert` uit na `npm run certs` (zie [Eerste keer](#eerste-keer-lokaal)). Voor een werkende viewer is **mkcert** (hierboven) vaak prettiger.
 
 ## Scripts
 
 - `npm run dev` – Server starten met ts-node (development).
 - `npm run build` – TypeScript compileren naar `dist/`.
 - `npm run start` – Gecompileerde server starten (`node dist/server.js`).
+- `npm run certs` – Schrijft `cert/cert.pem` en `cert/key.pem` (zelfondertekend, met SAN’s voor localhost).
+- `npm run trust-cert` – **Windows:** installeert `cert/cert.pem` in de vertrouwde basiscertificeringsinstanties van de huidige gebruiker (eenmalig per machine).
+- `npm run certs:mkcert` – **Windows:** genereert `cert/*.pem` met mkcert (vereist geïnstalleerde `mkcert` en eerder `mkcert -install`).
 
 ## Docker
 
