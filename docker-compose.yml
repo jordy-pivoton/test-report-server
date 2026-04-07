@@ -1,5 +1,5 @@
 services:
-  app:
+  allure:
     build: .
     container_name: test-report-server
     restart: unless-stopped
@@ -9,14 +9,16 @@ services:
     environment:
       REPORTS_ROOT: /app/reports
       PORT: "3000"
-      USE_HTTPS: "${USE_HTTPS:-}"
+      USE_HTTPS: "1"
       HTTPS_PORT: "3443"
-      BASE_URL: "${BASE_URL:-}"
       SSL_CERT_PATH: /app/cert/cert.pem
       SSL_KEY_PATH: /app/cert/key.pem
     volumes:
-      - ${REPORTS_HOST_PATH:-./reports}:/app/reports:ro
-      - cert:/app/cert
-
-volumes:
-  cert:
+      - /var/jenkins/test/output:/app/reports:ro
+      - ./cert:/app/cert
+    networks:
+      - jenkins_network
+ 
+networks:
+  jenkins_network:
+    external: true

@@ -4,7 +4,7 @@ import fs from "fs";
 import fsp from "fs/promises";
 import https from "https";
 import { createRequire } from "module";
-import selfsigned from "selfsigned";
+import { generateDevHttpsPems } from "./httpsDevCert.js";
 
 const require = createRequire(import.meta.url);
 const app = express();
@@ -19,7 +19,7 @@ function getTraceViewerDir(): string {
 }
 const TRACE_VIEWER_DIR = getTraceViewerDir();
 
-const REPORTS_ROOT = path.resolve(process.env.REPORTS_ROOT ?? "./reports");
+const REPORTS_ROOT = path.resolve(process.env.REPORTS_ROOT ?? "R:/");
 const PORT = Number(process.env.PORT ?? 3000);
 const USE_HTTPS =
   process.env.USE_HTTPS === "1" ||
@@ -29,6 +29,8 @@ const HTTPS_PORT = Number(process.env.HTTPS_PORT ?? 3443);
 const SSL_CERT_PATH = process.env.SSL_CERT_PATH ?? path.resolve("./cert/cert.pem");
 const SSL_KEY_PATH = process.env.SSL_KEY_PATH ?? path.resolve("./cert/key.pem");
 const BASE_URL = process.env.BASE_URL ?? null;
+
+const ALLURE_DIR_NAME = "allure-reports";
 
 function parseHttpsOptions(): { key: string; cert: string } | null {
   if (!USE_HTTPS) return null;
@@ -44,13 +46,11 @@ function parseHttpsOptions(): { key: string; cert: string } | null {
   if (!fs.existsSync(certDir)) {
     fs.mkdirSync(certDir, { recursive: true });
   }
-  const attrs = [{ name: "commonName", value: "localhost" }];
-  const opts = { keySize: 2048, days: 365, algorithm: "sha256" };
-  const pems = selfsigned.generate(attrs, opts);
+  const pems = generateDevHttpsPems();
   fs.writeFileSync(certPath, pems.cert, "utf8");
-  fs.writeFileSync(keyPath, pems.private, "utf8");
+  fs.writeFileSync(keyPath, pems.key, "utf8");
   console.log(`Generated self-signed certificate in ${certDir}`);
-  return { cert: pems.cert, key: pems.private };
+  return pems;
 }
 
 type RunItem = {
@@ -83,14 +83,18 @@ async function getRuns(): Promise<RunGroup[]> {
 
   function addRun(testSoort: string, runId: string, runPath: string) {
     if (!isSafeTestSoort(testSoort) || !isSafeRunId(runId)) return;
-    const allureIndex = path.join(runPath, "allure-report", "index.html");
+
+    const allureIndex = path.join(runPath, ALLURE_DIR_NAME, "index.html");
     const hasAllure = fs.existsSync(allureIndex);
+
     const tracesDir = path.join(runPath, "traces");
     let traceFiles: string[] = [];
+
     if (fs.existsSync(tracesDir) && fs.statSync(tracesDir).isDirectory()) {
       const files = fs.readdirSync(tracesDir);
       traceFiles = files.filter((f) => f.endsWith(".zip") || f.endsWith(".trace"));
     }
+
     const run: RunItem = {
       id: runId,
       testSoort,
@@ -99,6 +103,7 @@ async function getRuns(): Promise<RunGroup[]> {
       allureUrl: hasAllure ? `/runs/${encodeURIComponent(testSoort)}/${encodeURIComponent(runId)}/allure/` : null,
       tracesBaseUrl: `/runs/${encodeURIComponent(testSoort)}/${encodeURIComponent(runId)}/traces/`,
     };
+
     const list = groupsByTestSoort.get(testSoort) ?? [];
     list.push(run);
     groupsByTestSoort.set(testSoort, list);
@@ -106,23 +111,24 @@ async function getRuns(): Promise<RunGroup[]> {
 
   for (const e of entries) {
     if (!e.isDirectory()) continue;
+
     const childPath = path.join(REPORTS_ROOT, e.name);
-    const hasAllureHere = fs.existsSync(path.join(childPath, "allure-report", "index.html"));
+    const hasAllureHere = fs.existsSync(path.join(childPath, ALLURE_DIR_NAME, "index.html"));
     const tracesDir = path.join(childPath, "traces");
     const hasTracesHere = fs.existsSync(tracesDir) && fs.statSync(tracesDir).isDirectory();
 
     if (hasAllureHere || hasTracesHere) {
-      // Platte run (backward compatibility): behandel als testsoort "overig"
       addRun("overig", e.name, childPath);
     } else {
-      // Testsoort-map: submappen zijn runs
       if (!isSafeTestSoort(e.name)) continue;
+
       let subEntries: fs.Dirent[];
       try {
         subEntries = await fsp.readdir(childPath, { withFileTypes: true });
       } catch {
         continue;
       }
+
       for (const sub of subEntries) {
         if (!sub.isDirectory()) continue;
         const runPath = path.join(childPath, sub.name);
@@ -140,56 +146,60 @@ async function getRuns(): Promise<RunGroup[]> {
   return result;
 }
 
-// --- Self-hosted Playwright Trace Viewer (must be before /runs routes) ---
 if (fs.existsSync(TRACE_VIEWER_DIR)) {
   app.use("/trace-viewer", express.static(TRACE_VIEWER_DIR));
 }
 
-// --- Static serving: Allure ---
 app.use("/runs/:testSoort/:runId/allure", (req, res, next) => {
   const { testSoort, runId } = req.params;
-  if (!isSafeTestSoort(testSoort) || !isSafeRunId(runId)) return res.status(400).send("Invalid testSoort or runId");
-  const dir = path.join(REPORTS_ROOT, testSoort, runId, "allure-report");
+  if (!isSafeTestSoort(testSoort) || !isSafeRunId(runId)) {
+    return res.status(400).send("Invalid testSoort or runId");
+  }
+
+  const dir = path.join(REPORTS_ROOT, testSoort, runId, ALLURE_DIR_NAME);
   return express.static(dir)(req, res, next);
 });
 
-// --- CORS preflight for traces (so trace.playwright.dev can fetch) ---
 app.options("/runs/:testSoort/:runId/traces/:filename", (req, res) => {
   const { testSoort, runId } = req.params;
-  if (!isSafeTestSoort(testSoort) || !isSafeRunId(runId)) return res.status(400).send("Invalid testSoort or runId");
+  if (!isSafeTestSoort(testSoort) || !isSafeRunId(runId)) {
+    return res.status(400).send("Invalid testSoort or runId");
+  }
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Max-Age", "86400");
   res.sendStatus(204);
 });
 
-// --- Trace viewer: redirect to self-hosted viewer (same-origin trace URL, no CORS) ---
 app.get("/runs/:testSoort/:runId/traces/view", (req, res) => {
   const { testSoort, runId } = req.params;
   const file = req.query.file;
+
   if (!isSafeTestSoort(testSoort) || !isSafeRunId(runId) || typeof file !== "string" || !file) {
     return res.status(400).send("Missing or invalid testSoort, runId or file");
   }
+
   const origin =
     BASE_URL ??
     (USE_HTTPS
       ? `https://${req.get("host") ?? `localhost:${HTTPS_PORT}`}`
       : `${req.protocol}://${req.get("host")}`);
+
   const traceUrl = `${origin}/runs/${encodeURIComponent(testSoort)}/${encodeURIComponent(runId)}/traces/${encodeURIComponent(file)}`;
   const viewerPath = `/trace-viewer/index.html?trace=${encodeURIComponent(traceUrl)}`;
   res.redirect(302, viewerPath);
 });
 
-// --- Static serving: Traces (with CORS so trace.playwright.dev can fetch) ---
 app.use("/runs/:testSoort/:runId/traces", (req, res, next) => {
   const { testSoort, runId } = req.params;
-  if (!isSafeTestSoort(testSoort) || !isSafeRunId(runId)) return res.status(400).send("Invalid testSoort or runId");
+  if (!isSafeTestSoort(testSoort) || !isSafeRunId(runId)) {
+    return res.status(400).send("Invalid testSoort or runId");
+  }
   res.setHeader("Access-Control-Allow-Origin", "*");
   const dir = path.join(REPORTS_ROOT, testSoort, runId, "traces");
   return express.static(dir)(req, res, next);
 });
 
-// --- UI (SSR HTML) ---
 app.get("/", async (req, res) => {
   const runGroups = await getRuns();
   const origin =
@@ -339,9 +349,8 @@ if (USE_HTTPS) {
     console.log(`Report server running on https://localhost:${HTTPS_PORT}`);
     console.log(`REPORTS_ROOT=${REPORTS_ROOT}`);
     console.log(
-      "Open https://localhost:" +
-        HTTPS_PORT +
-        " once and accept the certificate to use trace links."
+      "Chrome/Edge may show NET::ERR_CERT_AUTHORITY_INVALID for self-signed certs. " +
+        "Windows: run `npm run trust-cert` once, then reload. Or use `npm run certs:mkcert` after `mkcert -install`."
     );
   });
 } else {

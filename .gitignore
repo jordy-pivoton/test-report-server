@@ -11,6 +11,9 @@ dist/
 # Reports (generated)
 reports/
 
+# Local TLS material (regenerate with npm run certs)
+cert/*.pem
+
 # OS files
 Thumbs.db
 Desktop.ini

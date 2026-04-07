@@ -7,7 +7,10 @@
   "scripts": {
     "dev": "node --loader ts-node/esm src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "certs": "node --loader ts-node/esm src/generateCertsCli.ts",
+    "certs:mkcert": "powershell -ExecutionPolicy Bypass -File ./scripts/gen-cert-mkcert.ps1",
+    "trust-cert": "powershell -ExecutionPolicy Bypass -File ./scripts/trust-dev-cert.ps1"
   },
   "keywords": [],
   "author": "",
